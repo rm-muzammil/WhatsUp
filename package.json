@@ -1,0 +1,26 @@
+{
+  "name": "whatsapp-clone",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=apps/server\" \"npm run dev --workspace=apps/web\"",
+    "dev:server": "npm run dev --workspace=apps/server",
+    "dev:web": "npm run dev --workspace=apps/web"
+  },
+  "devDependencies": {
+    "@prisma/client": "^7.8.0",
+    "@types/node": "^25.6.0",
+    "@types/pg": "^8.20.0",
+    "concurrently": "^8.2.2",
+    "prisma": "^7.8.0"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0",
+    "dotenv": "^17.4.2",
+    "pg": "^8.20.0"
+  }
+}
