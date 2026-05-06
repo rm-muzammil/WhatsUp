@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { connectSocket, disconnectSocket, getSocket } from '@/lib/socket'
+import { connectSocket, getSocket } from '@/lib/socket'
 import { useMessagesStore } from '@/store/messages'
 import { useConversationsStore } from '@/store/conversations'
 
@@ -17,7 +17,19 @@ export function useSocket() {
     connectSocket()
     const socket = getSocket()
 
-    conversations.forEach((c) => socket.emit('conversation:join', c.id))
+    const joinRooms = () => {
+      const currentConvs = useConversationsStore.getState().conversations
+      currentConvs.forEach((c) => socket.emit('conversation:join', c.id))
+      console.log(`🔌 Joined ${currentConvs.length} rooms`)
+    }
+
+    // Join rooms immediately if already connected
+    if (socket.connected) {
+      joinRooms()
+    }
+
+    // Join rooms when socket connects (or reconnects)
+    socket.on('connect', joinRooms)
 
     socket.on('message:new', (message) => {
       addMessage(message.conversationId, message)
@@ -36,14 +48,24 @@ export function useSocket() {
     })
 
     socket.on('message:status', ({ messageId, status }) => {
-      conversations.forEach((c) => {
+      useConversationsStore.getState().conversations.forEach((c) => {
         updateMessageStatus(c.id, messageId, status)
       })
     })
 
     return () => {
+      socket.off('connect', joinRooms)
       socket.off('message:new')
       socket.off('message:status')
+    }
+  }, [])
+
+  // Also join when new conversations are added
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const socket = getSocket()
+    if (socket.connected) {
+      conversations.forEach((c) => socket.emit('conversation:join', c.id))
     }
   }, [conversations.length])
 }
