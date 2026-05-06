@@ -1,5 +1,6 @@
 import { Server } from 'socket.io'
-import { ServerToClientEvents, ClientToServerEvents } from '@whatsapp-clone/types'
+// import { ServerToClientEvents, ClientToServerEvents } from '@whatsapp-clone/types'
+import { ServerToClientEvents, ClientToServerEvents } from '../types'
 import { verifyToken } from '../lib/jwt'
 import prisma from '../lib/prisma'
 

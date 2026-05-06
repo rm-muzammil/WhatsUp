@@ -8,10 +8,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "paths": {
-      "@whatsapp-clone/types": ["../../packages/types/index.ts"]
-    }
+    "resolveJsonModule": true
   },
   "include": [
     "src",
