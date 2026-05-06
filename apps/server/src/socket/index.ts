@@ -78,7 +78,7 @@ export function initSocket(
           createdAt: message.createdAt.toISOString(),
           sender: {
             ...message.sender,
-            createdAt: new Date().toISOString(),
+            // createdAt: new Date().toISOString(),
           },
         })
       } catch (err) {
