@@ -12,25 +12,27 @@ export function useSocket() {
   const conversations = useConversationsStore((s) => s.conversations)
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+
     connectSocket()
     const socket = getSocket()
 
-    // Join all conversation rooms
     conversations.forEach((c) => socket.emit('conversation:join', c.id))
 
     socket.on('message:new', (message) => {
       addMessage(message.conversationId, message)
       updateLastMessage(message.conversationId, message)
 
-      // Mark as delivered if we're not the sender
-      const storedUser = localStorage.getItem('auth-storage')
-      if (storedUser) {
-        const parsed = JSON.parse(storedUser)
-        const userId = parsed?.state?.user?.id
-        if (userId && message.sender.id !== userId) {
-          socket.emit('message:delivered', message.id)
+      try {
+        const stored = localStorage.getItem('auth-storage')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          const userId = parsed?.state?.user?.id
+          if (userId && message.sender.id !== userId) {
+            socket.emit('message:delivered', message.id)
+          }
         }
-      }
+      } catch {}
     })
 
     socket.on('message:status', ({ messageId, status }) => {
@@ -44,6 +46,4 @@ export function useSocket() {
       socket.off('message:status')
     }
   }, [conversations.length])
-
-  return getSocket()
 }

@@ -1,5 +1,7 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useSocket } from '@/hooks/useSocket'
 import Sidebar from '@/components/sidebar/Sidebar'
