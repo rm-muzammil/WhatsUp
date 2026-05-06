@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
-import  prisma  from '../lib/prisma'
+import { prisma } from '../lib/prisma'
 import { signToken } from '../lib/jwt'
 import { authMiddleware, AuthRequest } from '../middleware/auth'
 

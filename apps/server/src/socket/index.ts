@@ -2,7 +2,7 @@ import { Server } from 'socket.io'
 // import { ServerToClientEvents, ClientToServerEvents } from '@whatsapp-clone/types'
 import { ServerToClientEvents, ClientToServerEvents } from '../types'
 import { verifyToken } from '../lib/jwt'
-import prisma from '../lib/prisma'
+import { prisma } from '../lib/prisma'
 
 // Track online users: userId → socketId
 const onlineUsers = new Map<string, string>()
