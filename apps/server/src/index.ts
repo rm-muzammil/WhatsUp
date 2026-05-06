@@ -66,8 +66,20 @@ const httpServer = http.createServer(app)
 
 // ─── Middleware FIRST ─────────────────────────────────────
 app.use(cors({
-  origin: process.env.CLIENT_URL ?? 'http://localhost:3000',
+  origin: (origin, callback) => {
+    const allowed = [
+      process.env.CLIENT_URL ?? 'http://localhost:3000',
+      'http://localhost:3000',
+    ]
+    if (!origin || allowed.includes(origin)) {
+      callback(null, true)
+    } else {
+      callback(new Error(`CORS blocked: ${origin}`))
+    }
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }))
 app.use(express.json())
 app.use(cookieParser())
@@ -75,8 +87,19 @@ app.use(cookieParser())
 // ─── Socket.io ────────────────────────────────────────────
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   cors: {
-    origin: process.env.CLIENT_URL ?? 'http://localhost:3000',
+    origin: (origin, callback) => {
+      const allowed = [
+        process.env.CLIENT_URL ?? 'http://localhost:3000',
+        'http://localhost:3000',
+      ]
+      if (!origin || allowed.includes(origin)) {
+        callback(null, true)
+      } else {
+        callback(new Error(`CORS blocked: ${origin}`))
+      }
+    },
     credentials: true,
+    methods: ['GET', 'POST'],
   },
 })
 
