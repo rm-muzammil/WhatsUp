@@ -4,17 +4,20 @@ import { useEffect, useRef } from 'react'
 import { useConversationsStore } from '@/store/conversations'
 import { useMessagesStore } from '@/store/messages'
 import { useAuthStore } from '@/store/auth'
+import { useTypingStore } from '@/store/typing'
 import { getSocket } from '@/lib/socket'
 import api from '@/lib/axios'
 import { Avatar } from '../sidebar/ConversationItem'
 import MessageBubble from './MessageBubble'
 import MessageInput from './MessageInput'
+import TypingIndicator from './TypingIndicator'
 import { MessageSquare } from 'lucide-react'
 
 export default function ChatWindow() {
   const currentUser = useAuthStore((s) => s.user)
   const { activeConversationId, conversations } = useConversationsStore()
   const { messagesByConversation, setMessages } = useMessagesStore()
+  const typingByConversation = useTypingStore((s) => s.typingByConversation)
 
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -30,7 +33,11 @@ export default function ChatWindow() {
     ? messagesByConversation[activeConversationId] ?? []
     : []
 
-  // Fetch messages when conversation changes
+  const typingUsers = activeConversationId
+    ? Object.values(typingByConversation[activeConversationId] ?? {})
+    : []
+
+  // Fetch messages + mark as read when conversation changes
   useEffect(() => {
     if (!activeConversationId) return
 
@@ -45,9 +52,11 @@ export default function ChatWindow() {
 
     fetchMessages()
 
-    // Join socket room
     const socket = getSocket()
     socket.emit('conversation:join', activeConversationId)
+
+    // Mark conversation as read when opened
+    socket.emit('message:read', { conversationId: activeConversationId })
   }, [activeConversationId])
 
   // Scroll to bottom on new messages
@@ -64,7 +73,6 @@ export default function ChatWindow() {
     })
   }
 
-  // Empty state
   if (!activeConversationId) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-[#222e35] gap-4">
@@ -72,9 +80,7 @@ export default function ChatWindow() {
           <MessageSquare size={36} className="text-[#667781]" />
         </div>
         <div className="text-center">
-          <h2 className="text-[#e9edef] text-xl font-light">
-            WhatsApp Clone
-          </h2>
+          <h2 className="text-[#e9edef] text-xl font-light">WhatsApp Clone</h2>
           <p className="text-[#667781] text-sm mt-1">
             Select a conversation or search for a user to start chatting
           </p>
@@ -85,30 +91,20 @@ export default function ChatWindow() {
 
   return (
     <div className="flex-1 flex flex-col bg-[#0b141a] overflow-hidden">
-      {/* Chat header */}
-      {/* <div className="flex items-center gap-3 px-4 py-3 bg-[#202c33] flex-shrink-0">
-        {otherParticipant && (
-          <>
-            <Avatar name={otherParticipant.username} size={10} />
-            <div>
-              <p className="text-white text-sm font-medium">
-                {otherParticipant.username}
-              </p>
-              <p className="text-[#667781] text-xs">online</p>
-            </div>
-          </>
-        )}
-      </div> */}
-      {/* Chat header */}
-<div className="flex items-center gap-3 px-4 py-3 bg-[#202c33] flex-shrink-0">
-  <Avatar name={otherParticipant?.username ?? '?'} size={10} />
-  <div>
-    <p className="text-white text-sm font-medium">
-      {otherParticipant?.username ?? 'Unknown'}
-    </p>
-    <p className="text-[#667781] text-xs">online</p>
-  </div>
-</div>
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-[#202c33] flex-shrink-0">
+        <Avatar name={otherParticipant?.username ?? '?'} size={10} />
+        <div>
+          <p className="text-white text-sm font-medium">
+            {otherParticipant?.username ?? 'Unknown'}
+          </p>
+          {typingUsers.length > 0 ? (
+            <p className="text-[#00a884] text-xs">typing...</p>
+          ) : (
+            <p className="text-[#667781] text-xs">online</p>
+          )}
+        </div>
+      </div>
 
       {/* Messages */}
       <div
@@ -131,8 +127,14 @@ export default function ChatWindow() {
         <div ref={bottomRef} />
       </div>
 
+      {/* Typing indicator */}
+      <TypingIndicator names={typingUsers} />
+
       {/* Input */}
-      <MessageInput onSend={handleSend} />
+      <MessageInput
+        onSend={handleSend}
+        conversationId={activeConversationId}
+      />
     </div>
   )
 }

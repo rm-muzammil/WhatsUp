@@ -1,25 +1,20 @@
 import { Server } from 'socket.io'
-// import { ServerToClientEvents, ClientToServerEvents } from '@whatsapp-clone/types'
 import { ServerToClientEvents, ClientToServerEvents } from '../types'
 import { verifyToken } from '../lib/jwt'
 import prisma from '../lib/prisma'
 
-// Track online users: userId → socketId
 const onlineUsers = new Map<string, string>()
+
+// Track typing timeouts per user per conversation
+const typingTimeouts = new Map<string, NodeJS.Timeout>()
 
 export function initSocket(
   io: Server<ClientToServerEvents, ServerToClientEvents>
 ): void {
 
-  // ─── Auth middleware ──────────────────────────────────
   io.use((socket, next) => {
     const token = socket.handshake.auth.token as string | undefined
-
-    if (!token) {
-      next(new Error('No token provided'))
-      return
-    }
-
+    if (!token) { next(new Error('No token provided')); return }
     try {
       const payload = verifyToken(token)
       socket.data.userId = payload.userId
@@ -30,17 +25,30 @@ export function initSocket(
     }
   })
 
-  // ─── Connection ───────────────────────────────────────
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     const userId = socket.data.userId as string
+    const username = socket.data.username as string
 
-    // Mark user as online
     onlineUsers.set(userId, socket.id)
     io.emit('user:online', userId)
 
-    console.log(`✅ ${socket.data.username} connected (${socket.id})`)
+    console.log(`✅ ${username} connected (${socket.id})`)
 
-    // ─── Join conversation rooms ────────────────────────
+    // Auto-join all conversation rooms
+    try {
+      const participations = await prisma.conversationParticipant.findMany({
+        where: { userId },
+        select: { conversationId: true },
+      })
+      participations.forEach(({ conversationId }) => {
+        socket.join(conversationId)
+      })
+      console.log(`📦 ${username} joined ${participations.length} rooms`)
+    } catch (err) {
+      console.error('Error auto-joining rooms:', err)
+    }
+
+    // ── Join / leave ─────────────────────────────────────
     socket.on('conversation:join', (conversationId) => {
       socket.join(conversationId)
     })
@@ -49,16 +57,12 @@ export function initSocket(
       socket.leave(conversationId)
     })
 
-    // ─── Send message ───────────────────────────────────
+    // ── Send message ─────────────────────────────────────
     socket.on('message:send', async ({ conversationId, content }) => {
       try {
-        // Verify sender is a participant
         const participant = await prisma.conversationParticipant.findUnique({
-          where: {
-            conversationId_userId: { conversationId, userId },
-          },
+          where: { conversationId_userId: { conversationId, userId } },
         })
-
         if (!participant) return
 
         const message = await prisma.message.create({
@@ -73,9 +77,11 @@ export function initSocket(
           data: { updatedAt: new Date() },
         })
 
-        // Broadcast to everyone in the room (including sender)
+        socket.join(conversationId)
+
         io.to(conversationId).emit('message:new', {
           ...message,
+          readAt: null,
           createdAt: message.createdAt.toISOString(),
           sender: {
             ...message.sender,
@@ -87,10 +93,15 @@ export function initSocket(
       }
     })
 
-    // ─── Message delivered ──────────────────────────────
+    // ── Message delivered ────────────────────────────────
     socket.on('message:delivered', async (messageId) => {
       try {
-        const message = await prisma.message.update({
+        const message = await prisma.message.findUnique({
+          where: { id: messageId },
+        })
+        if (!message || message.status !== 'SENT') return
+
+        await prisma.message.update({
           where: { id: messageId },
           data: { status: 'DELIVERED' },
         })
@@ -104,11 +115,85 @@ export function initSocket(
       }
     })
 
-    // ─── Disconnect ─────────────────────────────────────
+    // ── Mark conversation as read ────────────────────────
+    socket.on('message:read', async ({ conversationId }) => {
+      try {
+        // Mark all unread messages in this conversation as READ
+        await prisma.message.updateMany({
+          where: {
+            conversationId,
+            status: { not: 'READ' },
+            senderId: { not: userId }, // only mark others' messages
+          },
+          data: {
+            status: 'READ',
+            readAt: new Date(),
+          },
+        })
+
+        // Notify everyone in the room
+        io.to(conversationId).emit('message:read', {
+          conversationId,
+          readerId: userId,
+        })
+      } catch (err) {
+        console.error('message:read error', err)
+      }
+    })
+
+    // ── Typing indicators ────────────────────────────────
+    socket.on('typing:start', ({ conversationId }) => {
+      // Broadcast to others in room (not sender)
+      socket.to(conversationId).emit('typing:start', {
+        conversationId,
+        userId,
+        username,
+      })
+
+      // Auto-stop typing after 3 seconds of no activity
+      const key = `${userId}:${conversationId}`
+      const existing = typingTimeouts.get(key)
+      if (existing) clearTimeout(existing)
+
+      const timeout = setTimeout(() => {
+        socket.to(conversationId).emit('typing:stop', {
+          conversationId,
+          userId,
+        })
+        typingTimeouts.delete(key)
+      }, 3000)
+
+      typingTimeouts.set(key, timeout)
+    })
+
+    socket.on('typing:stop', ({ conversationId }) => {
+      socket.to(conversationId).emit('typing:stop', {
+        conversationId,
+        userId,
+      })
+
+      const key = `${userId}:${conversationId}`
+      const existing = typingTimeouts.get(key)
+      if (existing) {
+        clearTimeout(existing)
+        typingTimeouts.delete(key)
+      }
+    })
+
+    // ── Disconnect ───────────────────────────────────────
     socket.on('disconnect', () => {
       onlineUsers.delete(userId)
       io.emit('user:offline', userId)
-      console.log(`❌ ${socket.data.username} disconnected`)
+
+      // Clean up typing timeouts
+      typingTimeouts.forEach((timeout, key) => {
+        if (key.startsWith(userId)) {
+          clearTimeout(timeout)
+          typingTimeouts.delete(key)
+        }
+      })
+
+      console.log(`❌ ${username} disconnected`)
     })
   })
 }

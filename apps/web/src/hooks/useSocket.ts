@@ -4,32 +4,21 @@ import { useEffect } from 'react'
 import { connectSocket, getSocket } from '@/lib/socket'
 import { useMessagesStore } from '@/store/messages'
 import { useConversationsStore } from '@/store/conversations'
+import { useTypingStore } from '@/store/typing'
 
 export function useSocket() {
   const addMessage = useMessagesStore((s) => s.addMessage)
   const updateMessageStatus = useMessagesStore((s) => s.updateMessageStatus)
+  const markConversationRead = useMessagesStore((s) => s.markConversationRead)
   const updateLastMessage = useConversationsStore((s) => s.updateLastMessage)
-  const conversations = useConversationsStore((s) => s.conversations)
+  const setTyping = useTypingStore((s) => s.setTyping)
+  const clearTyping = useTypingStore((s) => s.clearTyping)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
 
     connectSocket()
     const socket = getSocket()
-
-    const joinRooms = () => {
-      const currentConvs = useConversationsStore.getState().conversations
-      currentConvs.forEach((c) => socket.emit('conversation:join', c.id))
-      console.log(`🔌 Joined ${currentConvs.length} rooms`)
-    }
-
-    // Join rooms immediately if already connected
-    if (socket.connected) {
-      joinRooms()
-    }
-
-    // Join rooms when socket connects (or reconnects)
-    socket.on('connect', joinRooms)
 
     socket.on('message:new', (message) => {
       addMessage(message.conversationId, message)
@@ -42,6 +31,12 @@ export function useSocket() {
           const userId = parsed?.state?.user?.id
           if (userId && message.sender.id !== userId) {
             socket.emit('message:delivered', message.id)
+
+            // If this conversation is active, mark as read immediately
+            const activeId = useConversationsStore.getState().activeConversationId
+            if (activeId === message.conversationId) {
+              socket.emit('message:read', { conversationId: message.conversationId })
+            }
           }
         }
       } catch {}
@@ -53,18 +48,33 @@ export function useSocket() {
       })
     })
 
+    socket.on('message:read', ({ conversationId }) => {
+      markConversationRead(conversationId)
+    })
+
+    socket.on('typing:start', ({ conversationId, userId, username }) => {
+      setTyping(conversationId, userId, username)
+    })
+
+    socket.on('typing:stop', ({ conversationId, userId }) => {
+      clearTyping(conversationId, userId)
+    })
+
     return () => {
-      socket.off('connect', joinRooms)
       socket.off('message:new')
       socket.off('message:status')
+      socket.off('message:read')
+      socket.off('typing:start')
+      socket.off('typing:stop')
     }
   }, [])
 
-  // Also join when new conversations are added
+  // Join new conversations
+  const conversations = useConversationsStore((s) => s.conversations)
   useEffect(() => {
     if (typeof window === 'undefined') return
     const socket = getSocket()
-    if (socket.connected) {
+    if (socket.connected && conversations.length > 0) {
       conversations.forEach((c) => socket.emit('conversation:join', c.id))
     }
   }, [conversations.length])
