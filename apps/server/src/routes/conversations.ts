@@ -4,47 +4,68 @@ import prisma from '../lib/prisma'
 import { authMiddleware, AuthRequest } from '../middleware/auth'
 
 const router = Router()
-
 router.use(authMiddleware)
 
 const createSchema = z.object({
   participantId: z.string().uuid(),
 })
 
+const conversationInclude = {
+  participants: {
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          avatarUrl: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      },
+    },
+  },
+  messages: {
+    orderBy: { createdAt: 'desc' as const },
+    take: 1,
+    include: {
+      sender: {
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      },
+    },
+  },
+}
+
 // ─── GET /conversations ───────────────────────────────────
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.user!.userId
 
   const conversations = await prisma.conversation.findMany({
-    where: {
-      participants: { some: { userId } },
-    },
-    include: {
-      participants: {
-        include: {
-          user: {
-            select: { id: true, username: true, avatarUrl: true },
-          },
-        },
-      },
-      messages: {
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-        include: {
-          sender: { select: { id: true, username: true, avatarUrl: true } },
-        },
-      },
-    },
+    where: { participants: { some: { userId } } },
+    include: conversationInclude,
     orderBy: { updatedAt: 'desc' },
   })
 
-  res.json({ conversations })
+  // Flatten participants to just user objects
+  const mapped = conversations.map((c) => ({
+    ...c,
+    participants: c.participants.map((p) => p.user),
+    lastMessage: c.messages[0] ?? null,
+    unreadCount: 0,
+  }))
+
+  res.json({ conversations: mapped })
 })
 
 // ─── POST /conversations ──────────────────────────────────
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const result = createSchema.safeParse(req.body)
-
   if (!result.success) {
     res.status(400).json({ error: result.error.flatten().fieldErrors })
     return
@@ -58,7 +79,6 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     return
   }
 
-  // Check if conversation already exists between these two users
   const existing = await prisma.conversation.findFirst({
     where: {
       AND: [
@@ -66,24 +86,18 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
         { participants: { some: { userId: participantId } } },
       ],
     },
-    include: {
-      participants: {
-        include: {
-          user: { select: { id: true, username: true, avatarUrl: true } },
-        },
-      },
-      messages: {
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-        include: {
-          sender: { select: { id: true, username: true, avatarUrl: true } },
-        },
-      },
-    },
+    include: conversationInclude,
   })
 
   if (existing) {
-    res.json({ conversation: existing })
+    res.json({
+      conversation: {
+        ...existing,
+        participants: existing.participants.map((p) => p.user),
+        lastMessage: existing.messages[0] ?? null,
+        unreadCount: 0,
+      },
+    })
     return
   }
 
@@ -93,23 +107,17 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
         create: [{ userId }, { userId: participantId }],
       },
     },
-    include: {
-      participants: {
-        include: {
-          user: { select: { id: true, username: true, avatarUrl: true } },
-        },
-      },
-      messages: {
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-        include: {
-          sender: { select: { id: true, username: true, avatarUrl: true } },
-        },
-      },
-    },
+    include: conversationInclude,
   })
 
-  res.status(201).json({ conversation })
+  res.status(201).json({
+    conversation: {
+      ...conversation,
+      participants: conversation.participants.map((p) => p.user),
+      lastMessage: conversation.messages[0] ?? null,
+      unreadCount: 0,
+    },
+  })
 })
 
 export default router

@@ -80,7 +80,7 @@ export default function ChatWindow() {
           <MessageSquare size={36} className="text-[#667781]" />
         </div>
         <div className="text-center">
-          <h2 className="text-[#e9edef] text-xl font-light">WhatsApp Clone</h2>
+          <h2 className="text-[#e9edef] text-xl font-light">WhatsUp</h2>
           <p className="text-[#667781] text-sm mt-1">
             Select a conversation or search for a user to start chatting
           </p>

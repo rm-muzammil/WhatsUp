@@ -6,8 +6,8 @@ import Providers from '@/components/Providers'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'WhatsApp Clone',
-  description: 'A WhatsApp web clone built with Next.js',
+  title: 'WhatsUp',
+  description: 'A real-time messaging app',
 }
 
 export default function RootLayout({

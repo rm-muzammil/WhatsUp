@@ -5,6 +5,7 @@ import { connectSocket, getSocket } from '@/lib/socket'
 import { useMessagesStore } from '@/store/messages'
 import { useConversationsStore } from '@/store/conversations'
 import { useTypingStore } from '@/store/typing'
+import { useAuthStore } from '@/store/auth'
 
 export function useSocket() {
   const addMessage = useMessagesStore((s) => s.addMessage)
@@ -13,6 +14,7 @@ export function useSocket() {
   const updateLastMessage = useConversationsStore((s) => s.updateLastMessage)
   const setTyping = useTypingStore((s) => s.setTyping)
   const clearTyping = useTypingStore((s) => s.clearTyping)
+  const currentUser = useAuthStore((s) => s.user)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -24,22 +26,14 @@ export function useSocket() {
       addMessage(message.conversationId, message)
       updateLastMessage(message.conversationId, message)
 
-      try {
-        const stored = localStorage.getItem('auth-storage')
-        if (stored) {
-          const parsed = JSON.parse(stored)
-          const userId = parsed?.state?.user?.id
-          if (userId && message.sender.id !== userId) {
-            socket.emit('message:delivered', message.id)
+      if (currentUser && message.sender.id !== currentUser.id) {
+        socket.emit('message:delivered', message.id)
 
-            // If this conversation is active, mark as read immediately
-            const activeId = useConversationsStore.getState().activeConversationId
-            if (activeId === message.conversationId) {
-              socket.emit('message:read', { conversationId: message.conversationId })
-            }
-          }
+        const activeId = useConversationsStore.getState().activeConversationId
+        if (activeId === message.conversationId) {
+          socket.emit('message:read', { conversationId: message.conversationId })
         }
-      } catch {}
+      }
     })
 
     socket.on('message:status', ({ messageId, status }) => {
@@ -53,10 +47,12 @@ export function useSocket() {
     })
 
     socket.on('typing:start', ({ conversationId, userId, username }) => {
+      console.log('typing:start received', { conversationId, userId, username })
       setTyping(conversationId, userId, username)
     })
 
     socket.on('typing:stop', ({ conversationId, userId }) => {
+      console.log('typing:stop received', { conversationId, userId })
       clearTyping(conversationId, userId)
     })
 
@@ -67,9 +63,8 @@ export function useSocket() {
       socket.off('typing:start')
       socket.off('typing:stop')
     }
-  }, [])
+  }, [currentUser])
 
-  // Join new conversations
   const conversations = useConversationsStore((s) => s.conversations)
   useEffect(() => {
     if (typeof window === 'undefined') return
